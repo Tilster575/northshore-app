@@ -736,6 +736,19 @@ export default function App() {
     }
   };
 
+  /* ── Generate boat number: B + first 4 letters (uppercase) + sequential 0001 ── */
+  const generateBoatNumber = (boatName) => {
+    const letters = boatName.replace(/[^a-zA-Z]/g, "").substring(0, 4).toUpperCase().padEnd(4, "X");
+    const prefix = `B${letters}`;
+    const existing = boats
+      .map((b) => b.boatNumber)
+      .filter((bn) => bn && bn.startsWith(prefix))
+      .map((bn) => parseInt(bn.slice(prefix.length), 10))
+      .filter((n) => !isNaN(n));
+    const next = existing.length > 0 ? Math.max(...existing) + 1 : 1;
+    return `${prefix}${String(next).padStart(4, "0")}`;
+  };
+
   /* ── Save boat → Supabase ── */
   const saveBoat = async () => {
     if (!boatForm.name) {
@@ -747,15 +760,23 @@ export default function App() {
       const body = {
         name: boatForm.name,
         customer_id: boatForm.customerId || null,
-        length_ft: boatForm.lengthFt ? parseInt(boatForm.lengthFt) : null,
-        type: boatForm.type,
-        berth_number: boatForm.berthNumber,
+        length_m: boatForm.lengthM ? parseFloat(boatForm.lengthM) : null,
+        vessel_type: boatForm.vesselType || null,
+        draft: boatForm.draft ? parseFloat(boatForm.draft) : null,
         notes: boatForm.notes
       };
       if (selectedBoatId) {
         const [row] = await supaFetch(`boats?id=eq.${selectedBoatId}`, { method: "PATCH", body: JSON.stringify(body) });
         setBoats((prev) => prev.map((b) => b.id === selectedBoatId ? mapBoat(row) : b));
       } else {
+        let newNumber = generateBoatNumber(boatForm.name);
+        const duplicate = boats.find((b) => b.boatNumber === newNumber);
+        if (duplicate) {
+          const nums = boats.map((b) => b.boatNumber).filter(Boolean).map((bn) => parseInt(bn.slice(5), 10)).filter((n) => !isNaN(n));
+          const maxNum = nums.length > 0 ? Math.max(...nums) : 0;
+          newNumber = `B${boatForm.name.replace(/[^a-zA-Z]/g, "").substring(0, 4).toUpperCase().padEnd(4, "X")}${String(maxNum + 1).padStart(4, "0")}`;
+        }
+        body.boat_number = newNumber;
         const [row] = await supaFetch("boats", { method: "POST", body: JSON.stringify(body) });
         setBoats((prev) => [...prev, mapBoat(row)]);
       }
@@ -994,9 +1015,9 @@ export default function App() {
               </div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 16 }}>
                 <Inp label="Boat Name *" value={boatForm.name} onChange={(e) => setB("name", e.target.value)} placeholder="e.g. Sea Spirit" />
-                <Inp label="Length (ft)" type="number" value={boatForm.lengthFt} onChange={(e) => setB("lengthFt", e.target.value)} placeholder="e.g. 35" />
-                <Inp label="Type" value={boatForm.type} onChange={(e) => setB("type", e.target.value)} placeholder="e.g. Sailing Yacht" />
-                <Inp label="Berth Number" value={boatForm.berthNumber} onChange={(e) => setB("berthNumber", e.target.value)} placeholder="e.g. B12" />
+                <Inp label="Length (m)" type="number" value={boatForm.lengthM || ""} onChange={(e) => setB("lengthM", e.target.value)} placeholder="e.g. 10.5" />
+                <Sel label="Vessel Type" options={["", "Yacht", "Motor Boat", "Dingy"]} value={boatForm.vesselType || ""} onChange={(e) => setB("vesselType", e.target.value)} />
+                <Inp label="Draft" type="number" value={boatForm.draft || ""} onChange={(e) => setB("draft", e.target.value)} placeholder="e.g. 1.5" />
               </div>
               <div style={{ marginBottom: 16 }}>
                 <SearchableDropdown
