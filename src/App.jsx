@@ -451,6 +451,7 @@ export default function App() {
   const [showContacts, setShowContacts] = useState(false);
   const [showSuppliers, setShowSuppliers] = useState(false);
   const [highTides, setHighTides] = useState("");
+  const [calTides, setCalTides] = useState("");
   const [showEditModal, setShowEditModal] = useState(false);
   const [showChangeReasonModal, setShowChangeReasonModal] = useState(false);
   const [changeReason, setChangeReason] = useState("");
@@ -896,6 +897,24 @@ export default function App() {
       fetchJobChanges(selectedId);
     }
   }, [selectedId, view, fetchJobChanges]);
+
+  /* Load high tides when calendar date is selected */
+  useEffect(() => {
+    if (calSelectedDate) {
+      (async () => {
+        try {
+          const rows = await supaFetch(`tide_times?date=eq.${calSelectedDate}&high_low=eq.High&order=time.asc`);
+          if (rows && rows.length > 0) {
+            setCalTides(rows.map((r) => `${(r.time || "").slice(0, 5)} - ${r.height}m`).join(";  "));
+          } else {
+            setCalTides("");
+          }
+        } catch { setCalTides(""); }
+      })();
+    } else {
+      setCalTides("");
+    }
+  }, [calSelectedDate]);
 
   const hasActiveFilters = activityFilter !== "All" || dateFrom || dateTo;
   const clearFilters = () => { setActivityFilter("All"); setDateFrom(""); setDateTo(""); };
@@ -1571,9 +1590,17 @@ export default function App() {
           </div>
           {calSelectedDate && (
             <div style={{ background: CARD, border: `1px solid ${BORDER}`, borderRadius: 16, padding: 24 }}>
-              <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 16, color: ACCENT }}>
-                {new Date(calSelectedDate + "T00:00:00").toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric" })}
-                <span style={{ color: MUTED, fontWeight: 600, fontSize: 13, marginLeft: 8 }}>({calDayJobs.length} job{calDayJobs.length !== 1 ? "s" : ""})</span>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, flexWrap: "wrap", gap: 8 }}>
+                <div style={{ fontSize: 16, fontWeight: 800, color: ACCENT }}>
+                  {new Date(calSelectedDate + "T00:00:00").toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric" })}
+                  <span style={{ color: MUTED, fontWeight: 600, fontSize: 13, marginLeft: 8 }}>({calDayJobs.length} job{calDayJobs.length !== 1 ? "s" : ""})</span>
+                </div>
+                {calTides && (
+                  <div style={{ background: "#1a1a1a", border: `1px solid ${BORDER}`, borderRadius: 8, padding: "6px 12px", fontSize: 13, fontWeight: 600 }}>
+                    <span style={{ color: MUTED, marginRight: 6 }}>High Tides:</span>
+                    <span style={{ color: ACCENT }}>{calTides}</span>
+                  </div>
+                )}
               </div>
               {calDayJobs.length === 0 ? (
                 <div style={{ color: MUTED, textAlign: "center", padding: 20 }}>No jobs scheduled</div>
