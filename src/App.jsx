@@ -64,8 +64,8 @@ const PRIORITIES = ["Low", "Medium", "High", "Urgent"];
 const PRIORITY_COLORS = { Low: "#6b7280", Medium: "#3b82f6", High: "#f59e0b", Urgent: "#ef4444" };
 
 const TEAM = [
-  "Select team member...", "Adam", "Beth", "Charlie", "Dan",
-  "Emma", "Fiona", "George", "Hannah", "Ian", "Jade"
+  "Select team member...", "Matt Rogers", "Henry Message", "Tom Knight",
+  "Charlie Nicholls", "Josh McCarthney"
 ];
 
 const statusColor = (s) => ({
