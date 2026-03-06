@@ -394,6 +394,28 @@ function compressImage(file) {
   });
 }
 
+/* ── Compute field-level diff between original job and edited form ── */
+function computeJobDiff(originalJob, editedForm) {
+  const fields = ["customerName", "boatName", "phone", "location", "activity", "scheduledDate", "priority", "issues"];
+  const fieldLabels = {
+    customerName: "Customer Name", boatName: "Boat Name", phone: "Telephone",
+    location: "Location", activity: "Activity", scheduledDate: "Scheduled Date",
+    priority: "Priority", issues: "Issues"
+  };
+  return fields
+    .filter((f) => {
+      const oldVal = (originalJob[f] ?? "").toString();
+      const newVal = (editedForm[f] ?? "").toString();
+      return oldVal !== newVal;
+    })
+    .map((f) => ({
+      field: f,
+      label: fieldLabels[f] || f,
+      oldValue: (originalJob[f] ?? "").toString(),
+      newValue: (editedForm[f] ?? "").toString()
+    }));
+}
+
 /* ══════════════════════════════════════════════════════════════
    MAIN APP
    ══════════════════════════════════════════════════════════════ */
@@ -422,6 +444,11 @@ export default function App() {
   const [boatForm, setBoatForm] = useState(emptyBoat);
   const [customerForm, setCustomerForm] = useState(emptyCustomer);
   const [showAddCustomerForm, setShowAddCustomerForm] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [showChangeReasonModal, setShowChangeReasonModal] = useState(false);
+  const [changeReason, setChangeReason] = useState("");
+  const [editForm, setEditForm] = useState(emptyForm);
+  const [jobChanges, setJobChanges] = useState([]);
 
   const now = new Date();
   const [calYear, setCalYear] = useState(now.getFullYear());
@@ -470,11 +497,100 @@ export default function App() {
     }
   }, []);
 
+  const fetchJobChanges = useCallback(async (jobId) => {
+    try {
+      const rows = await supaFetch(`job_changes?job_id=eq.${jobId}&order=changed_at.desc`);
+      setJobChanges(rows || []);
+    } catch (err) {
+      console.error("Failed to load job changes:", err);
+    }
+  }, []);
+
   useEffect(() => {
     Promise.all([fetchJobs(), fetchBoats(), fetchCustomers()]).finally(() => {
       setLoading(false);
     });
   }, [fetchJobs, fetchBoats, fetchCustomers]);
+
+  /* ── Edit job helpers ── */
+  const startEditJob = (jobId) => {
+    const job = jobs.find((j) => j.id === jobId);
+    if (!job) return;
+    setEditForm({
+      customerName: job.customerName,
+      boatName: job.boatName,
+      phone: job.phone,
+      location: job.location,
+      activity: job.activity,
+      scheduledDate: job.scheduledDate,
+      priority: job.priority,
+      issues: job.issues,
+      photoFile: null, photoPreview: null,
+      boatId: job.boatId, customerId: null, useCustomBoat: true
+    });
+    setShowEditModal(true);
+  };
+
+  const cancelEditJob = () => {
+    setEditForm(emptyForm);
+    setShowEditModal(false);
+    setShowChangeReasonModal(false);
+    setChangeReason("");
+  };
+
+  const handleEditSaveClick = () => {
+    const job = jobs.find((j) => j.id === selectedId);
+    if (!job) return;
+    const changes = computeJobDiff(job, editForm);
+    if (changes.length === 0) { alert("No changes were made."); return; }
+    setShowChangeReasonModal(true);
+  };
+
+  const saveJobEdit = async (jobId, reason) => {
+    if (!reason?.trim()) { alert("Please provide a reason for the changes."); return; }
+    const originalJob = jobs.find((j) => j.id === jobId);
+    if (!originalJob) return;
+    const changes = computeJobDiff(originalJob, editForm);
+    if (changes.length === 0) return;
+
+    setSaving(true); setSaveError(null);
+    try {
+      const dbFieldMap = {
+        customerName: "customer_name", boatName: "boat_name", phone: "phone",
+        location: "location", activity: "activity", scheduledDate: "scheduled_date",
+        priority: "priority", issues: "issues"
+      };
+      const updateBody = {};
+      changes.forEach(({ field }) => {
+        updateBody[dbFieldMap[field]] = editForm[field] || null;
+      });
+
+      const [updatedRow] = await supaFetch(`jobs?id=eq.${jobId}`, {
+        method: "PATCH", body: JSON.stringify(updateBody)
+      });
+
+      const changeRecords = changes.map(({ label, oldValue, newValue }) => ({
+        job_id: jobId,
+        changed_field: label,
+        old_value: oldValue,
+        new_value: newValue,
+        reason: reason.trim()
+      }));
+      await supaFetch("job_changes", { method: "POST", body: JSON.stringify(changeRecords) });
+
+      setJobs((prev) => prev.map((j) => j.id === jobId ? mapJob(updatedRow) : j));
+      setShowEditModal(false);
+      setShowChangeReasonModal(false);
+      setChangeReason("");
+      await fetchJobChanges(jobId);
+    } catch (err) {
+      console.error(err);
+      setSaveError("Failed to save job changes");
+      setTimeout(() => setSaveError(null), 4000);
+    } finally {
+      setSaving(false);
+    }
+  };
 
   /* ── Photo handlers ── */
   const handlePhoto = (e) => {
@@ -725,6 +841,14 @@ export default function App() {
   };
 
   const selectedJob = jobs.find((j) => j.id === selectedId);
+
+  /* Load change history when viewing a job */
+  useEffect(() => {
+    if (selectedId && view === "detail") {
+      fetchJobChanges(selectedId);
+    }
+  }, [selectedId, view, fetchJobChanges]);
+
   const hasActiveFilters = activityFilter !== "All" || dateFrom || dateTo;
   const clearFilters = () => { setActivityFilter("All"); setDateFrom(""); setDateTo(""); };
 
@@ -766,6 +890,58 @@ export default function App() {
             padding: "12px 24px", fontWeight: 800, fontSize: 14, cursor: "pointer", flex: 1, opacity: saving ? 0.6 : 1
           }}>{saving ? "Cancelling..." : "Confirm Cancellation"}</button>
           <button onClick={() => { setShowCancelModal(false); setCancelReason(""); }} style={{
+            background: "transparent", color: MUTED, border: `1px solid ${BORDER}`, borderRadius: 8, padding: "12px 24px", fontSize: 14, cursor: "pointer"
+          }}>Go Back</button>
+        </div>
+      </div>
+    </div>
+  );
+
+  /* ── Edit Job Modal ── */
+  const EditJobModal = ({ job }) => (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.8)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 }}>
+      <div style={{ background: CARD, border: `1px solid ${ACCENT}`, borderRadius: 16, padding: 28, maxWidth: 640, width: "90%", maxHeight: "90vh", overflowY: "auto" }}>
+        <div style={{ fontSize: 18, fontWeight: 800, color: ACCENT, marginBottom: 4 }}>Edit Job</div>
+        <div style={{ color: MUTED, fontSize: 13, marginBottom: 20 }}>{job.jobRef} · {job.boatName}</div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 16 }}>
+          <Inp label="Customer Name" value={editForm.customerName} onChange={(e) => setEditForm((f) => ({ ...f, customerName: e.target.value }))} />
+          <Inp label="Boat Name" value={editForm.boatName} onChange={(e) => setEditForm((f) => ({ ...f, boatName: e.target.value }))} />
+          <Inp label="Telephone" value={editForm.phone} onChange={(e) => setEditForm((f) => ({ ...f, phone: e.target.value }))} />
+          <Inp label="Location" value={editForm.location} onChange={(e) => setEditForm((f) => ({ ...f, location: e.target.value }))} />
+          <Sel label="Activity" options={ACTIVITIES} value={editForm.activity} onChange={(e) => setEditForm((f) => ({ ...f, activity: e.target.value }))} />
+          <Inp label="Scheduled Date" type="date" value={editForm.scheduledDate} onChange={(e) => setEditForm((f) => ({ ...f, scheduledDate: e.target.value }))} />
+          <Sel label="Priority" options={PRIORITIES} value={editForm.priority} onChange={(e) => setEditForm((f) => ({ ...f, priority: e.target.value }))} />
+        </div>
+        <div style={{ marginBottom: 16 }}>
+          <Txt label="Issues" value={editForm.issues} onChange={(e) => setEditForm((f) => ({ ...f, issues: e.target.value }))} />
+        </div>
+        <div style={{ display: "flex", gap: 10, marginTop: 20 }}>
+          <button disabled={saving} onClick={handleEditSaveClick} style={{
+            background: ACCENT, color: BG, border: "none", borderRadius: 8,
+            padding: "12px 24px", fontWeight: 800, fontSize: 14, cursor: "pointer", flex: 1, opacity: saving ? 0.6 : 1
+          }}>{saving ? "Saving..." : "Save Changes"}</button>
+          <button onClick={cancelEditJob} style={{
+            background: "transparent", color: MUTED, border: `1px solid ${BORDER}`, borderRadius: 8, padding: "12px 24px", fontSize: 14, cursor: "pointer"
+          }}>Cancel</button>
+        </div>
+      </div>
+    </div>
+  );
+
+  /* ── Change Reason Modal ── */
+  const ChangeReasonModal = () => (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.8)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1001 }}>
+      <div style={{ background: CARD, border: `1px solid ${ACCENT}`, borderRadius: 16, padding: 28, maxWidth: 480, width: "90%" }}>
+        <div style={{ fontSize: 18, fontWeight: 800, color: ACCENT, marginBottom: 4 }}>Reason for Changes</div>
+        <div style={{ color: MUTED, fontSize: 13, marginBottom: 20 }}>Please explain why these changes are being made.</div>
+        <Txt label="Reason *" value={changeReason} onChange={(e) => setChangeReason(e.target.value)} placeholder="e.g. Customer changed mind, date correction..." />
+        <div style={{ display: "flex", gap: 10, marginTop: 20 }}>
+          <button disabled={saving || !changeReason.trim()} onClick={() => saveJobEdit(selectedId, changeReason)} style={{
+            background: ACCENT, color: BG, border: "none", borderRadius: 8,
+            padding: "12px 24px", fontWeight: 800, fontSize: 14, cursor: "pointer", flex: 1,
+            opacity: (saving || !changeReason.trim()) ? 0.6 : 1
+          }}>{saving ? "Saving..." : "Confirm Changes"}</button>
+          <button onClick={() => { setShowChangeReasonModal(false); setChangeReason(""); }} style={{
             background: "transparent", color: MUTED, border: `1px solid ${BORDER}`, borderRadius: 8, padding: "12px 24px", fontSize: 14, cursor: "pointer"
           }}>Go Back</button>
         </div>
@@ -1033,6 +1209,8 @@ export default function App() {
         <Header view={view} setView={setView} />
         <SavingIndicator saving={saving} error={saveError} />
         {showCancelModal && <CancelModal job={job} />}
+        {showEditModal && <EditJobModal job={job} />}
+        {showChangeReasonModal && <ChangeReasonModal />}
         <div style={{ padding: 24, maxWidth: 700, margin: "0 auto" }}>
           <button onClick={() => setView("dashboard")} style={{ background: "transparent", color: MUTED, border: "none", cursor: "pointer", fontSize: 14, marginBottom: 16, padding: 0 }}>← Back to Dashboard</button>
           <div style={{ background: CARD, border: `1px solid ${isCancelled ? "#ef444444" : BORDER}`, borderRadius: 16, padding: 28 }}>
@@ -1066,6 +1244,29 @@ export default function App() {
               <div style={{ marginBottom: 16 }}>
                 <Label>Initial Photo</Label>
                 <img src={job.photoUrl} alt="initial" style={{ maxWidth: "100%", borderRadius: 10, marginTop: 8, border: `1px solid ${BORDER}` }} />
+              </div>
+            )}
+            {jobChanges.length > 0 && (
+              <div style={{ borderTop: `1px solid ${BORDER}`, paddingTop: 20, marginTop: 8, marginBottom: 16 }}>
+                <div style={{ color: ACCENT, fontWeight: 800, fontSize: 15, marginBottom: 12 }}>Change History</div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                  {jobChanges.map((ch, idx) => (
+                    <div key={idx} style={{ background: "#1a1a1a", borderRadius: 10, padding: "12px 16px", borderLeft: `3px solid ${ACCENT}` }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "start", marginBottom: 6 }}>
+                        <div style={{ color: ACCENT, fontSize: 13, fontWeight: 700 }}>{ch.changed_field}</div>
+                        <div style={{ color: MUTED, fontSize: 11 }}>{new Date(ch.changed_at).toLocaleString("en-GB")}</div>
+                      </div>
+                      <div style={{ color: MUTED, fontSize: 12, marginBottom: 4 }}>
+                        <span style={{ color: "#ef4444" }}>"{ch.old_value || "(empty)"}"</span>
+                        <span style={{ margin: "0 6px" }}>&rarr;</span>
+                        <span style={{ color: ACCENT }}>"{ch.new_value || "(empty)"}"</span>
+                      </div>
+                      {ch.reason && (
+                        <div style={{ fontSize: 12, color: TEXT, marginTop: 6, fontStyle: "italic" }}>Reason: {ch.reason}</div>
+                      )}
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
             {isCancelled && (
@@ -1119,14 +1320,18 @@ export default function App() {
                   ))}
                 </div>
                 <div style={{ display: "flex", gap: 10 }}>
+                  <button onClick={() => startEditJob(job.id)} style={{
+                    background: ACCENT, color: BG, border: "none", borderRadius: 8,
+                    padding: "12px 20px", fontWeight: 800, fontSize: 14, cursor: "pointer", flex: 1
+                  }}>✏ Edit Job</button>
                   <button onClick={() => { setCompletion(emptyCompletion); setView("complete"); }} style={{
                     background: ACCENT, color: BG, border: "none", borderRadius: 8,
                     padding: "12px 20px", fontWeight: 800, fontSize: 14, cursor: "pointer", flex: 1
-                  }}>✓ Complete This Activity</button>
+                  }}>✓ Complete</button>
                   <button onClick={() => setShowCancelModal(true)} style={{
                     background: "transparent", color: "#ef4444", border: "1px solid #ef4444",
                     borderRadius: 8, padding: "12px 20px", fontWeight: 700, fontSize: 14, cursor: "pointer"
-                  }}>✕ Cancel Job</button>
+                  }}>✕ Cancel</button>
                 </div>
               </div>
             )}
