@@ -448,6 +448,8 @@ export default function App() {
   const [boatForm, setBoatForm] = useState(emptyBoat);
   const [customerForm, setCustomerForm] = useState(emptyCustomer);
   const [showAddCustomerForm, setShowAddCustomerForm] = useState(false);
+  const [showContacts, setShowContacts] = useState(false);
+  const [showSuppliers, setShowSuppliers] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showChangeReasonModal, setShowChangeReasonModal] = useState(false);
   const [changeReason, setChangeReason] = useState("");
@@ -900,11 +902,22 @@ export default function App() {
   });
 
   /* Customers filtering */
-  const filteredCustomers = customers.filter((c) =>
-    c.name.toLowerCase().includes(customerSearch.toLowerCase()) ||
-    c.email.toLowerCase().includes(customerSearch.toLowerCase()) ||
-    c.company.toLowerCase().includes(customerSearch.toLowerCase())
-  );
+  const filteredCustomers = customers.filter((c) => {
+    const q = customerSearch.toLowerCase();
+    const matchesSearch = c.name.toLowerCase().includes(q) ||
+      c.email.toLowerCase().includes(q) ||
+      c.company.toLowerCase().includes(q);
+    if (!matchesSearch) return false;
+    const note = (c.notes || "").toLowerCase();
+    const isCustomer = note.includes("customer");
+    const isContact = note.includes("contact");
+    const isSupplier = note.includes("supplier");
+    const isUnknown = !isCustomer && !isContact && !isSupplier;
+    if (isCustomer || isUnknown) return true;
+    if (isContact && showContacts) return true;
+    if (isSupplier && showSuppliers) return true;
+    return false;
+  });
 
   /* ── Cancel Modal ── */
   const CancelModal = ({ job }) => (
@@ -1100,12 +1113,26 @@ export default function App() {
             <div style={{ color: MUTED, fontSize: 13, fontWeight: 600 }}>💡 Customers synced from Xero. To add customers, add them in Xero first.</div>
           </div>
 
-          <div style={{ display: "flex", gap: 16, marginBottom: 24, alignItems: "center" }}>
+          <div style={{ display: "flex", gap: 16, marginBottom: 16, alignItems: "center" }}>
             <input placeholder="🔍  Search customers..." value={customerSearch} onChange={(e) => setCustomerSearch(e.target.value)}
               style={{ flex: 1, minWidth: 200, background: CARD, border: `1px solid ${BORDER}`, borderRadius: 8, color: TEXT, padding: "10px 14px", fontSize: 14, outline: "none", fontFamily: "inherit" }} />
             <button onClick={() => setShowAddCustomerForm(!showAddCustomerForm)} style={{
               background: showAddCustomerForm ? "transparent" : ACCENT, color: showAddCustomerForm ? MUTED : BG, border: `1px solid ${showAddCustomerForm ? BORDER : ACCENT}`, borderRadius: 8, padding: "10px 16px", fontWeight: 700, fontSize: 13, cursor: "pointer", whiteSpace: "nowrap"
             }}>{showAddCustomerForm ? "Cancel" : "+ Add Customer Manually"}</button>
+          </div>
+          <div style={{ display: "flex", gap: 20, marginBottom: 24, alignItems: "center" }}>
+            <div style={{ color: MUTED, fontSize: 12, fontWeight: 600 }}>Showing: Customers</div>
+            <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer", fontSize: 13, color: TEXT }}>
+              <input type="checkbox" checked={showContacts} onChange={(e) => setShowContacts(e.target.checked)}
+                style={{ accentColor: ACCENT, width: 16, height: 16, cursor: "pointer" }} />
+              + Contacts
+            </label>
+            <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer", fontSize: 13, color: TEXT }}>
+              <input type="checkbox" checked={showSuppliers} onChange={(e) => setShowSuppliers(e.target.checked)}
+                style={{ accentColor: ACCENT, width: 16, height: 16, cursor: "pointer" }} />
+              + Suppliers
+            </label>
+            <div style={{ color: MUTED, fontSize: 12 }}>({filteredCustomers.length} shown)</div>
           </div>
 
           {showAddCustomerForm && (
