@@ -332,10 +332,14 @@ function mapBoat(row) {
     customerId: row.customer_id,
     lengthFt: row.length_ft,
     lengthM: row.length_m,
+    draft: row.draft,
+    weight: row.weight,
     type: row.type,
     berthNumber: row.berth_number,
     boatNumber: row.boat_number || "",
     vesselType: row.vessel_type || "",
+    keel: row.keel || "",
+    cradle: row.cradle || "",
     xeroCustomer: row.xero_customer || "",
     notes: row.notes || ""
   };
@@ -865,10 +869,14 @@ export default function App() {
   const calDayJobs = calSelectedDate ? (jobsByDate[calSelectedDate] || []) : [];
 
   /* Boats filtering */
-  const filteredBoats = boats.filter((b) =>
-    b.name.toLowerCase().includes(boatSearch.toLowerCase()) ||
-    (customers.find((c) => c.id === b.customerId)?.name || "").toLowerCase().includes(boatSearch.toLowerCase())
-  );
+  const filteredBoats = boats.filter((b) => {
+    const q = boatSearch.toLowerCase();
+    return b.name.toLowerCase().includes(q) ||
+      b.xeroCustomer.toLowerCase().includes(q) ||
+      b.boatNumber.toLowerCase().includes(q) ||
+      b.vesselType.toLowerCase().includes(q) ||
+      (customers.find((c) => c.id === b.customerId)?.name || "").toLowerCase().includes(q);
+  });
 
   /* Customers filtering */
   const filteredCustomers = customers.filter((c) =>
@@ -1013,40 +1021,38 @@ export default function App() {
             </div>
           )}
 
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: 16 }}>
-            {filteredBoats.map((boat) => {
-              const owner = customers.find((c) => c.id === boat.customerId);
-              return (
-                <div key={boat.id} onClick={() => { setSelectedBoatId(boat.id); setBoatForm(boat); }} style={{
-                  background: CARD, border: `1px solid ${BORDER}`, borderRadius: 12, padding: 20, cursor: "pointer",
-                  transition: "all 0.2s", opacity: selectedBoatId === boat.id ? 1 : 0.8
-                }}>
-                  <div style={{ fontSize: 16, fontWeight: 800, color: ACCENT, marginBottom: 12 }}>{boat.name}</div>
-                  <div style={{ fontSize: 13, color: TEXT, marginBottom: 8 }}>
-                    <div style={{ color: MUTED, fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: 1, marginBottom: 2 }}>Owner</div>
-                    <div>{owner?.name || "Unassigned"}</div>
-                  </div>
-                  {boat.type && (
-                    <div style={{ fontSize: 13, color: TEXT, marginBottom: 8 }}>
-                      <div style={{ color: MUTED, fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: 1, marginBottom: 2 }}>Type</div>
-                      <div>{boat.type}</div>
-                    </div>
-                  )}
-                  {boat.lengthFt && (
-                    <div style={{ fontSize: 13, color: TEXT, marginBottom: 8 }}>
-                      <div style={{ color: MUTED, fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: 1, marginBottom: 2 }}>Length</div>
-                      <div>{boat.lengthFt} ft</div>
-                    </div>
-                  )}
-                  {boat.berthNumber && (
-                    <div style={{ fontSize: 13, color: TEXT }}>
-                      <div style={{ color: MUTED, fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: 1, marginBottom: 2 }}>Berth</div>
-                      <div>{boat.berthNumber}</div>
-                    </div>
-                  )}
-                </div>
-              );
-            })}
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+              <thead>
+                <tr style={{ borderBottom: `2px solid ${ACCENT}`, textAlign: "left" }}>
+                  {["Name", "Owner", "Boat No.", "Length (m)", "Draft", "Weight", "Type", "Keel", "Cradle", "Xero Customer"].map((h) => (
+                    <th key={h} style={{ padding: "10px 8px", color: ACCENT, fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, whiteSpace: "nowrap" }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {filteredBoats.map((boat) => {
+                  const owner = customers.find((c) => c.id === boat.customerId);
+                  return (
+                    <tr key={boat.id} onClick={() => { setSelectedBoatId(boat.id); setBoatForm(boat); }} style={{
+                      borderBottom: `1px solid ${BORDER}`, cursor: "pointer",
+                      background: selectedBoatId === boat.id ? ACCENT + "11" : "transparent"
+                    }}>
+                      <td style={{ padding: "10px 8px", fontWeight: 700, color: ACCENT, whiteSpace: "nowrap" }}>{boat.name}</td>
+                      <td style={{ padding: "10px 8px", color: TEXT }}>{owner?.name || "—"}</td>
+                      <td style={{ padding: "10px 8px", color: MUTED, fontFamily: "monospace", fontSize: 12 }}>{boat.boatNumber || "—"}</td>
+                      <td style={{ padding: "10px 8px", color: TEXT }}>{boat.lengthM || "—"}</td>
+                      <td style={{ padding: "10px 8px", color: TEXT }}>{boat.draft || "—"}</td>
+                      <td style={{ padding: "10px 8px", color: TEXT }}>{boat.weight || "—"}</td>
+                      <td style={{ padding: "10px 8px", color: TEXT }}>{boat.vesselType || "—"}</td>
+                      <td style={{ padding: "10px 8px", color: TEXT }}>{boat.keel || "—"}</td>
+                      <td style={{ padding: "10px 8px", color: TEXT }}>{boat.cradle || "—"}</td>
+                      <td style={{ padding: "10px 8px", color: MUTED, fontSize: 12 }}>{boat.xeroCustomer || "—"}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
 
           {filteredBoats.length === 0 && (
