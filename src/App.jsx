@@ -450,6 +450,7 @@ export default function App() {
   const [showAddCustomerForm, setShowAddCustomerForm] = useState(false);
   const [showContacts, setShowContacts] = useState(false);
   const [showSuppliers, setShowSuppliers] = useState(false);
+  const [highTides, setHighTides] = useState("");
   const [showEditModal, setShowEditModal] = useState(false);
   const [showChangeReasonModal, setShowChangeReasonModal] = useState(false);
   const [changeReason, setChangeReason] = useState("");
@@ -509,6 +510,26 @@ export default function App() {
       setJobChanges(rows || []);
     } catch (err) {
       console.error("Failed to load job changes:", err);
+    }
+  }, []);
+
+  const fetchHighTides = useCallback(async (dateStr) => {
+    if (!dateStr) { setHighTides(""); return; }
+    try {
+      const rows = await supaFetch(`tide_times?date=eq.${dateStr}&high_low=eq.High&order=time.asc`);
+      if (rows && rows.length > 0) {
+        const formatted = rows.map((r) => {
+          const t = r.time ? r.time.slice(0, 5) : "";
+          const h = r.height != null ? `${r.height}m` : "";
+          return `${t} - ${h}`;
+        }).join(";  ");
+        setHighTides(formatted);
+      } else {
+        setHighTides("No tide data for this date");
+      }
+    } catch (err) {
+      console.error("Failed to load tides:", err);
+      setHighTides("Unable to load tide data");
     }
   }, []);
 
@@ -1456,8 +1477,16 @@ export default function App() {
               <Inp label="Customer Telephone" value={form.phone} onChange={(e) => setF("phone", e.target.value)} placeholder="e.g. 07700 900000" type="tel" />
               <Inp label="Boat Location" value={form.location} onChange={(e) => setF("location", e.target.value)} placeholder="e.g. Berth 14, Pontoon B" />
               <Sel label="Activity" options={ACTIVITIES} value={form.activity} onChange={(e) => setF("activity", e.target.value)} />
-              <Inp label="Scheduled Date" type="date" value={form.scheduledDate} onChange={(e) => setF("scheduledDate", e.target.value)} />
+              <Inp label="Scheduled Date" type="date" value={form.scheduledDate} onChange={(e) => { setF("scheduledDate", e.target.value); fetchHighTides(e.target.value); }} />
               <Sel label="Priority" options={PRIORITIES} value={form.priority} onChange={(e) => setF("priority", e.target.value)} />
+              {form.scheduledDate && (
+                <div style={{ gridColumn: "1 / -1" }}>
+                  <Label>High Tides</Label>
+                  <div style={{ ...inputStyle, background: "#1a1a1a", color: highTides && !highTides.startsWith("No") && !highTides.startsWith("Unable") ? ACCENT : MUTED, fontWeight: 600, fontSize: 14 }}>
+                    {highTides || "Loading..."}
+                  </div>
+                </div>
+              )}
               <Field label="Photo">
                 <button onClick={() => fileRef.current?.click()} style={{ ...inputStyle, cursor: "pointer", color: form.photoFile ? ACCENT : MUTED, textAlign: "left" }}>
                   {form.photoFile ? `✓ ${form.photoFile.name}` : "📷  Tap to take or choose photo..."}
